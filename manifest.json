@@ -1,0 +1,13 @@
+{
+  "name": "DOW Detailing POS",
+  "short_name": "DOW POS",
+  "description": "Point of Sale system for DOW Detailing",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#1a1a1a",
+  "theme_color": "#1a1a1a",
+  "orientation": "landscape-primary",
+  "icons": [
+    { "src": "logo.png", "sizes": "any", "type": "image/png", "purpose": "any" }
+  ]
+}

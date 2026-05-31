@@ -1,0 +1,1299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>DOW Detailing — POS</title>
+<meta name="theme-color" content="#1a1a1a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="DOW POS">
+<link rel="manifest" href="manifest.json">
+<!-- EmailJS — fill in your credentials below to enable email invoices -->
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script>
+// ── EMAIL CONFIG ────────────────────────────────────────────────────────────
+// 1. Sign up free at https://www.emailjs.com
+// 2. Create a service (Gmail, Outlook, etc.) and note the Service ID
+// 3. Create a template. In the HTML body field, paste: {{{invoice_html}}}
+//    Subject line: Invoice {{invoice_number}} — DOW Detailing
+//    To email field: {{to_email}}
+// 4. Copy your Public Key from Account > API Keys
+// 5. Replace the three values below
+const EMAILJS_PUBLIC_KEY  = 'YGmpaGO4Qhpdzskue';
+const EMAILJS_SERVICE_ID  = 'service_uwgqi2e';
+const EMAILJS_TEMPLATE_ID = 'template_n0h92sm';
+const EMAIL_CONFIGURED = EMAILJS_PUBLIC_KEY !== 'YOUR_PUBLIC_KEY';
+if (EMAIL_CONFIGURED) emailjs.init(EMAILJS_PUBLIC_KEY);
+// ────────────────────────────────────────────────────────────────────────────
+
+// Firebase — fill in once your Firebase project is created
+// Replace this entire block with the Firebase module snippet from Firebase console
+window._fbReady = false;
+window._db = null;
+window._sessionTxns = [];
+window._addDoc       = async () => { throw new Error('Firebase not configured'); };
+window._collection   = () => {};
+window._serverTimestamp = () => new Date().toISOString();
+window._doc          = () => {};
+window._updateDoc    = async () => { throw new Error('Firebase not configured'); };
+window._loadTodayTxns = async function(dateStr, cb) {
+  try {
+    const stored = JSON.parse(localStorage.getItem('dow_txns') || '[]');
+    cb(null, stored.filter(t => t.date === dateStr && !t.voided));
+  } catch(e) { cb(e, []); }
+};
+</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:#1a1a1a;font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden}
+:root{
+  --bg:#1a1a1a;--bg2:#242424;--bg3:#2e2e2e;--bg4:#383838;
+  --border:#3a3a3a;--border2:#484848;
+  --text:#f0ede8;--text2:#a09890;--text3:#6a6460;
+  --amber:#e8a020;--amber-dim:#a06c10;--amber-bg:#2a2010;--amber-light:#f5c060;
+  --green:#4caf7d;--green-bg:#0e2018;
+  --red:#e05050;--red-bg:#280e0e;
+  --blue:#4a9dff;--blue-bg:#0d1e38;
+  --radius:10px;--radius-sm:6px;
+}
+
+/* ── LOGIN ── */
+.login-screen{position:fixed;inset:0;background:#111;z-index:500;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px}
+.login-screen.hidden{display:none}
+.login-logo{font-size:26px;font-weight:700;color:var(--amber);letter-spacing:-0.5px}
+.login-sub{font-size:14px;color:var(--text3)}
+.pin-display{display:flex;gap:12px;margin:8px 0}
+.pin-dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--border2);background:transparent;transition:background 0.15s}
+.pin-dot.filled{background:var(--amber);border-color:var(--amber)}
+.pin-pad{display:grid;grid-template-columns:repeat(3,72px);gap:10px}
+.pin-btn{height:64px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:22px;font-weight:500;cursor:pointer;transition:all 0.1s;display:flex;align-items:center;justify-content:center;touch-action:manipulation;-webkit-user-select:none;user-select:none}
+.pin-btn:hover{background:var(--bg4);border-color:var(--amber-dim)}
+.pin-btn:active{transform:scale(0.95);background:var(--amber-bg)}
+.pin-btn.wide{grid-column:span 3;font-size:15px;color:var(--text2)}
+.pin-error{color:var(--red);font-size:13px;min-height:18px;text-align:center}
+
+/* ── ADMIN MODAL ── */
+.admin-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:600;align-items:center;justify-content:center}
+.admin-overlay.open{display:flex}
+.admin-modal{background:var(--bg2);border:1px solid var(--border2);border-radius:14px;padding:28px;width:320px;display:flex;flex-direction:column;gap:16px;align-items:center}
+.admin-title{font-size:16px;font-weight:600;color:var(--text);text-align:center}
+.admin-sub{font-size:13px;color:var(--text2);text-align:center}
+.admin-pin-display{display:flex;gap:10px;margin:4px 0}
+.admin-pad{display:grid;grid-template-columns:repeat(3,72px);gap:10px}
+.admin-btn{height:64px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:22px;font-weight:500;cursor:pointer;transition:all 0.1s;display:flex;align-items:center;justify-content:center;width:100%;touch-action:manipulation;-webkit-user-select:none;user-select:none}
+.admin-btn:hover{background:var(--bg4)}
+.admin-btn:active{transform:scale(0.95)}
+.admin-error{color:var(--red);font-size:12px;min-height:16px}
+.admin-cancel{font-size:13px;color:var(--text3);cursor:pointer;margin-top:4px}
+.admin-cancel:hover{color:var(--text2)}
+
+/* ── MAIN LAYOUT ── */
+.app{display:flex;height:100vh;width:100vw}
+.cashier-panel{flex:1.6;display:flex;flex-direction:column;border-right:1px solid var(--border);min-width:0}
+.order-panel{flex:1;display:flex;flex-direction:column;min-width:0;max-width:360px}
+
+/* Topbar */
+.topbar{height:52px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 12px;gap:10px;flex-shrink:0}
+.topbar-brand{font-size:15px;font-weight:700;color:var(--amber);white-space:nowrap}
+.topbar-spacer{flex:1}
+.sync-dot{width:8px;height:8px;border-radius:50%;background:var(--text3);flex-shrink:0;transition:background 0.3s}
+.sync-dot.synced{background:var(--green)}
+.sync-dot.syncing{background:var(--amber);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.topbar-time{font-family:monospace;font-size:12px;color:var(--text2);white-space:nowrap}
+.nav-btns{display:flex;gap:5px}
+.nav-btn{padding:5px 9px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--bg3);color:var(--text2);font-size:11px;cursor:pointer;white-space:nowrap;touch-action:manipulation}
+.nav-btn:hover{background:var(--bg4);color:var(--text)}
+.nav-btn.danger{border-color:var(--red);color:var(--red)}
+.nav-btn.danger:hover{background:var(--red-bg)}
+.topbar-stats{font-size:11px;color:var(--text3);font-family:monospace;background:var(--bg3);border:1px solid var(--border);padding:3px 8px;border-radius:var(--radius-sm);white-space:nowrap;cursor:pointer}
+
+/* Category tabs */
+.cat-tabs{display:flex;gap:6px;padding:8px 10px;overflow-x:auto;flex-shrink:0;scrollbar-width:none;border-bottom:1px solid var(--border)}
+.cat-tabs::-webkit-scrollbar{display:none}
+.cat-tab{padding:6px 14px;border-radius:20px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);font-size:12px;cursor:pointer;white-space:nowrap;transition:all 0.1s;touch-action:manipulation;-webkit-user-select:none;user-select:none}
+.cat-tab:hover{background:var(--bg4)}
+.cat-tab.active{border-color:var(--amber);background:var(--amber-bg);color:var(--amber-light);font-weight:600}
+
+/* Service grid */
+.svc-area{flex:1;padding:10px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;overflow-y:auto;align-content:start;min-height:0}
+.svc-area::-webkit-scrollbar{width:3px}
+.svc-area::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.svc-btn{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;cursor:pointer;transition:all 0.12s;padding:12px;user-select:none;position:relative;overflow:hidden;min-height:88px;touch-action:manipulation;text-align:left;width:100%}
+.svc-btn:hover{border-color:var(--border2);background:var(--bg3)}
+.svc-btn.in-cart{border-color:var(--amber-dim)}
+.svc-btn:active{transform:scale(0.97)}
+.svc-name{font-size:13px;font-weight:600;color:var(--text);line-height:1.3}
+.svc-price{font-size:12px;color:var(--amber);font-family:monospace;font-weight:600;margin-top:6px}
+.svc-qty-badge{position:absolute;top:6px;right:6px;background:var(--amber);color:#1a1a1a;font-size:11px;font-weight:700;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;z-index:2}
+.svc-btn-custom{border-style:dashed!important}
+
+/* Size picker */
+.size-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;align-items:center;justify-content:center}
+.size-overlay.open{display:flex}
+.size-modal{background:var(--bg2);border:1px solid var(--border2);border-radius:14px;padding:24px;width:340px;display:flex;flex-direction:column;gap:16px;align-items:center}
+.size-title{font-size:15px;font-weight:600;color:var(--text);text-align:center;line-height:1.4}
+.size-btns{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%}
+.size-btn{padding:18px 10px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg3);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;transition:all 0.1s;touch-action:manipulation;width:100%}
+.size-btn:hover{border-color:var(--amber-dim);background:var(--bg4)}
+.size-btn:active{transform:scale(0.97);background:var(--amber-bg)}
+.size-label{font-size:15px;font-weight:600;color:var(--text)}
+.size-price{font-size:20px;font-weight:700;color:var(--amber);font-family:monospace}
+.size-cancel{font-size:13px;color:var(--text3);cursor:pointer;padding:4px}
+.size-cancel:hover{color:var(--text2)}
+
+/* Car plate bar */
+.plate-bar{padding:7px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0;background:var(--bg)}
+.plate-label{font-size:11px;color:var(--text3);white-space:nowrap;text-transform:uppercase;letter-spacing:0.05em}
+.plate-input{flex:1;padding:5px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:700;font-family:monospace;letter-spacing:1px;outline:none;text-transform:uppercase}
+.plate-input:focus{border-color:var(--amber)}
+.plate-input::placeholder{font-weight:400;letter-spacing:0;text-transform:none;color:var(--text3)}
+
+/* Order panel */
+.order-header{height:52px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 14px;flex-shrink:0}
+.order-header-title{font-size:14px;font-weight:500;color:var(--text2);flex:1}
+.order-header-btns{display:flex;gap:8px;align-items:center}
+.clear-btn{font-size:13px;color:var(--text3);cursor:pointer;padding:3px 8px;border-radius:4px}
+.clear-btn:hover{color:var(--red);background:var(--red-bg)}
+.order-items{flex:1;overflow-y:auto;padding:10px}
+.order-items::-webkit-scrollbar{width:3px}
+.order-items::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.empty-order{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text3);font-size:13px;gap:6px}
+.order-item{display:flex;align-items:center;gap:7px;padding:8px 6px;border-radius:var(--radius-sm);margin-bottom:2px;transition:background 0.1s}
+.order-item:hover{background:var(--bg3)}
+.order-item-name{flex:1;font-size:13px;color:var(--text);line-height:1.3}
+.order-item-price{font-size:13px;font-family:monospace;color:var(--text2);min-width:54px;text-align:right}
+.qty-ctrl{display:flex;align-items:center;gap:4px}
+.qty-btn{width:26px;height:26px;border-radius:50%;border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.1s;touch-action:manipulation}
+.qty-btn:hover{background:var(--bg4);border-color:var(--amber-dim)}
+.qty-num{font-size:14px;font-weight:500;color:var(--text);min-width:18px;text-align:center}
+.totals-area{padding:10px 14px;border-top:1px solid var(--border);flex-shrink:0}
+.total-row{display:flex;justify-content:space-between;margin-bottom:4px}
+.total-row .lbl{font-size:12px;color:var(--text2)}
+.total-row .val{font-size:12px;font-family:monospace;color:var(--text2)}
+.grand-total-row{display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
+.pay-btn{width:100%;margin-top:10px;padding:14px;background:var(--amber);color:#1a1a1a;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;cursor:pointer;transition:all 0.15s}
+.pay-btn:hover{background:var(--amber-light)}
+.pay-btn:disabled{background:var(--bg4);color:var(--text3);cursor:not-allowed}
+
+/* Modals base */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:100;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:14px;padding:22px;width:420px;max-width:95vw;max-height:90vh;overflow-y:auto}
+.modal::-webkit-scrollbar{width:4px}
+.modal::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.modal-title{font-size:17px;font-weight:700;color:var(--text);margin-bottom:4px}
+.modal-sub{font-size:13px;color:var(--text2);margin-bottom:16px}
+.modal-total{background:var(--bg3);border-radius:var(--radius-sm);padding:12px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center}
+.modal-total .lbl{font-size:13px;color:var(--text2)}
+.modal-total .amt{font-size:24px;font-weight:700;color:var(--amber);font-family:monospace}
+.pay-methods{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px}
+.pay-method-btn{padding:16px 10px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:14px;font-weight:500;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px;transition:all 0.15s;touch-action:manipulation}
+.pay-method-btn .pm-icon{font-size:24px}
+.pay-method-btn:hover{border-color:var(--amber-dim);background:var(--bg4)}
+.pay-method-btn.selected{border-color:var(--amber);background:var(--amber-bg);color:var(--amber-light)}
+.cash-ui{margin-top:14px}
+.cash-presets{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px}
+.cash-preset-btn{flex:1;min-width:64px;padding:11px 6px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:14px;font-weight:500;cursor:pointer;font-family:monospace;transition:all 0.1s;touch-action:manipulation}
+.cash-preset-btn:hover{border-color:var(--amber-dim);background:var(--bg4)}
+.cash-preset-btn.selected{border-color:var(--amber);background:var(--amber-bg);color:var(--amber-light)}
+.change-display{background:var(--green-bg);border:1px solid var(--green);border-radius:var(--radius-sm);padding:11px 14px;display:flex;justify-content:space-between;align-items:center;margin-top:8px}
+.change-display .lbl{font-size:13px;color:var(--green)}
+.change-display .amt{font-size:20px;font-weight:700;color:var(--green);font-family:monospace}
+.modal-actions{display:flex;gap:8px;margin-top:14px}
+.btn-secondary{flex:1;padding:12px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--bg3);color:var(--text2);font-size:14px;cursor:pointer;transition:all 0.1s}
+.btn-secondary:hover{background:var(--bg4);color:var(--text)}
+.btn-primary{flex:2;padding:12px;border-radius:var(--radius-sm);border:none;background:var(--amber);color:#1a1a1a;font-size:14px;font-weight:700;cursor:pointer;transition:all 0.1s}
+.btn-primary:hover{background:var(--amber-light)}
+.btn-primary:disabled{background:var(--bg4);color:var(--text3);cursor:not-allowed}
+
+/* Custom item modal */
+.custom-modal-box{background:var(--bg2);border:1px solid var(--border2);border-radius:14px;padding:22px;width:340px;max-width:95vw}
+.custom-input{width:100%;padding:10px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:15px;outline:none;margin-bottom:10px}
+.custom-input:focus{border-color:var(--amber)}
+
+/* Email invoice modal */
+.email-modal-box{background:var(--bg2);border:1px solid var(--border2);border-radius:14px;padding:22px;width:520px;max-width:95vw;max-height:90vh;overflow-y:auto}
+.email-modal-box::-webkit-scrollbar{width:4px}
+.email-modal-box::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.invoice-preview{background:#fff;border-radius:8px;overflow:hidden;margin:14px 0;font-family:Arial,sans-serif;color:#1a1a1a;font-size:12px}
+.inv-header{background:#1a1a1a;padding:16px 20px}
+.inv-header-brand{color:#e8a020;font-size:18px;font-weight:700}
+.inv-header-sub{color:#a09890;font-size:11px;margin-top:2px}
+.inv-meta{display:flex;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #eee}
+.inv-meta-left{display:flex;flex-direction:column;gap:2px}
+.inv-num{font-size:16px;font-weight:700;color:#1a1a1a}
+.inv-date{font-size:11px;color:#666}
+.inv-body{padding:14px 20px}
+.inv-tbl{width:100%;border-collapse:collapse;font-size:12px}
+.inv-tbl th{text-align:left;padding:6px 0;font-size:10px;color:#666;text-transform:uppercase;border-bottom:2px solid #1a1a1a}
+.inv-tbl th:not(:first-child){text-align:right}
+.inv-tbl td{padding:6px 0;border-bottom:1px solid #eee;vertical-align:top}
+.inv-tbl td:not(:first-child){text-align:right}
+.inv-tbl .inv-total-row td{font-weight:700;font-size:14px;border-bottom:none;border-top:2px solid #1a1a1a;padding-top:8px}
+.inv-tbl .inv-total-row td:last-child{color:#e8a020}
+.inv-tbl .inv-pay-row td{font-size:11px;color:#666;border-bottom:none;padding-top:4px}
+.inv-footer{background:#f9f9f9;padding:12px 20px;text-align:center;border-top:1px solid #eee;font-size:11px;color:#666}
+.email-input{width:100%;padding:10px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:15px;outline:none;margin-bottom:4px}
+.email-input:focus{border-color:var(--amber)}
+.email-status{font-size:12px;min-height:18px;margin-bottom:6px}
+.email-not-configured{font-size:11px;color:var(--text3);background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:8px 10px;margin-top:8px;line-height:1.5}
+.email-not-configured a{color:var(--amber);text-decoration:none}
+.btn-blue{flex:2;padding:12px;border-radius:var(--radius-sm);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:all 0.1s}
+.btn-blue:hover{background:#6ab3ff}
+.btn-blue:disabled{background:var(--bg4);color:var(--text3);cursor:not-allowed}
+
+/* Report modal */
+.report-modal{background:var(--bg2);border:1px solid var(--border2);border-radius:14px;padding:22px;width:500px;max-width:95vw;max-height:90vh;overflow-y:auto}
+.report-modal::-webkit-scrollbar{width:4px}
+.report-modal::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.report-header{text-align:center;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+.rh-brand{font-size:19px;font-weight:700;color:var(--amber)}
+.rh-type{font-size:13px;color:var(--text2);margin-top:3px}
+.rh-dt{font-size:11px;font-family:monospace;color:var(--text3);margin-top:3px}
+.report-section{margin-bottom:18px}
+.report-section-title{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--border)}
+.report-row{display:flex;justify-content:space-between;padding:5px 0;font-size:13px;border-bottom:1px solid var(--border)}
+.report-row:last-child{border-bottom:none}
+.report-row .rl{color:var(--text2)}
+.report-row .rv{font-family:monospace;color:var(--text);font-weight:500}
+.report-row.highlight .rl{color:var(--amber-light);font-weight:600}
+.report-row.highlight .rv{color:var(--amber);font-size:14px}
+
+/* Terminal closed */
+.terminal-closed{display:none;position:fixed;inset:0;background:var(--bg);z-index:200;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+.terminal-closed.open{display:flex}
+.tc-reopen{margin-top:20px;padding:11px 26px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text2);font-size:14px;cursor:pointer}
+.tc-reopen:hover{border-color:var(--amber-dim);color:var(--amber)}
+
+/* Toast */
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);padding:10px 18px;font-size:13px;color:var(--text);z-index:400;transition:transform 0.3s ease;display:flex;align-items:center;gap:8px;white-space:nowrap;max-width:90vw}
+.toast.show{transform:translateX(-50%) translateY(0)}
+
+/* Order complete */
+.order-complete{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:150;align-items:center;justify-content:center}
+.order-complete.open{display:flex}
+.oc-card{background:var(--bg2);border:1px solid var(--border2);border-radius:16px;padding:28px 36px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px;min-width:280px}
+.oc-check{font-size:44px}
+.oc-label{font-size:13px;color:var(--text2)}
+.oc-txnid{font-size:28px;font-weight:700;color:var(--amber);font-family:monospace;letter-spacing:1px}
+.oc-total{font-size:15px;color:var(--text);font-family:monospace}
+.oc-btns{display:flex;gap:8px;margin-top:4px}
+.oc-btn{padding:9px 18px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text2);font-size:13px;cursor:pointer;transition:all 0.1s;touch-action:manipulation}
+.oc-btn:hover{border-color:var(--amber-dim);color:var(--amber)}
+.oc-btn.primary{background:var(--blue-bg);border-color:var(--blue);color:var(--blue)}
+.oc-btn.primary:hover{background:var(--blue);color:#fff}
+
+/* Print receipt (fallback) */
+#receipt-print{display:none}
+@page{margin:0}
+@media print{
+  body>*{display:none!important}
+  #receipt-print{display:block!important;font-family:'Courier New',Courier,monospace;font-size:10pt;color:#000;width:76mm;padding:8mm 5mm 12mm;line-height:1.45}
+  .rp-head{text-align:center;padding-bottom:3mm}
+  .rp-sep{border:none;border-top:1.5px solid #000;margin:3mm 0}
+  .rp-dash{border:none;border-top:1px dashed #000;margin:3mm 0}
+  .rp-meta{text-align:center;font-size:9pt;color:#222;line-height:1.6;margin-bottom:3mm}
+  .rp-tbl{width:100%;border-collapse:collapse;font-size:10pt}
+  .rp-tbl td{padding:1.2mm 0;vertical-align:top}
+  .rp-tbl .rp-q{width:18pt;color:#444}
+  .rp-tbl .rp-n{padding-right:2mm}
+  .rp-tbl .rp-r{text-align:right;white-space:nowrap}
+  .rp-tbl .rp-tot td{font-size:14pt;font-weight:bold;padding:2mm 0}
+  .rp-tbl .rp-pay td{font-size:10pt;padding:1mm 0;text-transform:uppercase}
+  .rp-foot{text-align:center;font-size:9pt;color:#333;margin-top:4mm;line-height:1.7}
+}
+
+/* Responsive */
+@media(max-width:1024px) and (min-width:701px){
+  .svc-area{grid-template-columns:repeat(2,1fr)}
+  .order-panel{max-width:300px}
+}
+@media(max-width:700px){
+  html,body{overflow:auto}
+  .app{flex-direction:column;height:auto;min-height:100vh}
+  .cashier-panel{flex:none;height:auto;border-right:none;border-bottom:1px solid var(--border)}
+  .order-panel{flex:none;max-width:100%}
+  .svc-area{grid-template-columns:repeat(2,1fr);height:56vw;min-height:220px;max-height:340px;overflow-y:auto}
+  .topbar{height:48px;padding:0 10px;gap:7px}
+  .topbar-brand{font-size:14px}
+  .topbar-time{display:none}
+  .topbar-stats{display:none}
+  .nav-btn{font-size:10px;padding:4px 7px}
+  .order-header{height:44px;padding:0 10px}
+  .order-items{max-height:28vh;overflow-y:auto}
+  .totals-area{padding:8px 12px}
+  .pay-btn{padding:13px}
+  .modal{width:96vw;padding:14px;border-radius:10px}
+  .pay-methods{gap:7px}
+  .pay-method-btn{padding:14px 8px;font-size:13px}
+  .email-modal-box{width:96vw;padding:14px}
+  .report-modal{width:96vw;padding:14px}
+  .cat-tabs{padding:6px 8px}
+  .svc-btn{min-height:72px;padding:10px}
+  .svc-name{font-size:12px}
+  .svc-price{font-size:11px}
+  .login-screen{gap:18px;padding:20px}
+  .login-logo{font-size:22px}
+  .pin-pad{grid-template-columns:repeat(3,1fr);width:100%;max-width:280px}
+  .pin-btn{height:62px;font-size:22px}
+  .admin-modal{width:90vw;max-width:300px;padding:20px;gap:12px}
+  .admin-pad{grid-template-columns:repeat(3,1fr);width:100%}
+  .admin-btn{height:58px;font-size:21px}
+}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="login-screen" id="login-screen">
+  <div class="login-logo">🚗 DOW Detailing</div>
+  <div class="login-sub">Enter PIN to open terminal</div>
+  <div class="pin-display">
+    <div class="pin-dot" id="pd0"></div><div class="pin-dot" id="pd1"></div>
+    <div class="pin-dot" id="pd2"></div><div class="pin-dot" id="pd3"></div>
+  </div>
+  <div class="pin-error" id="pin-error"></div>
+  <div class="pin-pad">
+    <button type="button" class="pin-btn" ontouchstart="event.preventDefault();pinPress('1')" onclick="pinPress('1')">1</button>
+    <button type="button" class="pin-btn" ontouchstart="event.preventDefault();pinPress('2')" onclick="pinPress('2')">2</button>
+    <button type="button" class="pin-btn" ontouchstart="event.preventDefault();pinPress('3')" onclick="pinPress('3')">3</button>
+    <button type="button" class="pin-btn" ontouchstart="event.preventDefault();pinPress('4')" onclick="pinPress('4')">4</button>
+    <button type="button" class="pin-btn" ontouchstart="event.preventDefault();pinPress('5')" onclick="pinPress('5')">5</button>
+    <button type="button" class="pin-btn" ontouchstart="event.preventDefault();pinPress('6')" onclick="pinPress('6')">6</button>
+    <button type="button" class="pin-btn" ontouchstart="event.preventDefault();pinPress('7')" onclick="pinPress('7')">7</button>
+    <button type="button" class="pin-btn" ontouchstart="event.preventDefault();pinPress('8')" onclick="pinPress('8')">8</button>
+    <button type="button" class="pin-btn" ontouchstart="event.preventDefault();pinPress('9')" onclick="pinPress('9')">9</button>
+    <button type="button" class="pin-btn" style="font-size:18px;color:var(--text2)" ontouchstart="event.preventDefault();pinDel()" onclick="pinDel()">⌫</button>
+    <button type="button" class="pin-btn" ontouchstart="event.preventDefault();pinPress('0')" onclick="pinPress('0')">0</button>
+    <button type="button" class="pin-btn wide" ontouchstart="event.preventDefault();pinClear()" onclick="pinClear()">Clear</button>
+  </div>
+</div>
+
+<!-- ADMIN MODAL -->
+<div class="admin-overlay" id="admin-overlay">
+  <div class="admin-modal">
+    <div class="admin-title" id="admin-title">Admin Access</div>
+    <div class="admin-sub" id="admin-sub">Enter admin PIN</div>
+    <div class="admin-pin-display" id="admin-pin-display">
+      <div class="pin-dot" id="apd0"></div><div class="pin-dot" id="apd1"></div>
+      <div class="pin-dot" id="apd2"></div><div class="pin-dot" id="apd3"></div>
+    </div>
+    <div class="pin-error" id="admin-pin-error"></div>
+    <div class="admin-pad">
+      <button type="button" class="admin-btn" ontouchstart="event.preventDefault();adminPress('1')" onclick="adminPress('1')">1</button>
+      <button type="button" class="admin-btn" ontouchstart="event.preventDefault();adminPress('2')" onclick="adminPress('2')">2</button>
+      <button type="button" class="admin-btn" ontouchstart="event.preventDefault();adminPress('3')" onclick="adminPress('3')">3</button>
+      <button type="button" class="admin-btn" ontouchstart="event.preventDefault();adminPress('4')" onclick="adminPress('4')">4</button>
+      <button type="button" class="admin-btn" ontouchstart="event.preventDefault();adminPress('5')" onclick="adminPress('5')">5</button>
+      <button type="button" class="admin-btn" ontouchstart="event.preventDefault();adminPress('6')" onclick="adminPress('6')">6</button>
+      <button type="button" class="admin-btn" ontouchstart="event.preventDefault();adminPress('7')" onclick="adminPress('7')">7</button>
+      <button type="button" class="admin-btn" ontouchstart="event.preventDefault();adminPress('8')" onclick="adminPress('8')">8</button>
+      <button type="button" class="admin-btn" ontouchstart="event.preventDefault();adminPress('9')" onclick="adminPress('9')">9</button>
+      <button type="button" class="admin-btn" ontouchstart="event.preventDefault();adminDel()" onclick="adminDel()">⌫</button>
+      <button type="button" class="admin-btn" ontouchstart="event.preventDefault();adminPress('0')" onclick="adminPress('0')">0</button>
+      <button type="button" class="admin-btn" ontouchstart="event.preventDefault();adminPinClear()" onclick="adminPinClear()">C</button>
+    </div>
+    <div class="admin-cancel" onclick="closeAdminModal()">Cancel</div>
+  </div>
+</div>
+
+<!-- SIZE PICKER -->
+<div class="size-overlay" id="size-overlay" onclick="if(event.target===this)closeSizePicker()">
+  <div class="size-modal">
+    <div class="size-title" id="size-title">Select Size</div>
+    <div class="size-btns">
+      <button class="size-btn" id="size-small-btn" onclick="confirmSize('small')">
+        <span class="size-label">Small</span>
+        <span class="size-price" id="size-small-price">$0</span>
+      </button>
+      <button class="size-btn" id="size-large-btn" onclick="confirmSize('large')">
+        <span class="size-label">Large</span>
+        <span class="size-price" id="size-large-price">$0</span>
+      </button>
+    </div>
+    <div class="size-cancel" onclick="closeSizePicker()">Cancel</div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div class="app" id="app" style="display:none">
+  <div class="cashier-panel">
+    <div class="topbar">
+      <span class="topbar-brand">🚗 DOW Detailing</span>
+      <span class="topbar-stats" id="topbar-stats" onclick="unlockStats()">🔒 Sales</span>
+      <span class="topbar-spacer"></span>
+      <div class="sync-dot" id="sync-dot"></div>
+      <span class="topbar-time" id="clock"></span>
+      <div class="nav-btns">
+        <button class="nav-btn" onclick="openXReport()">X-Report</button>
+        <button class="nav-btn danger" onclick="openZReport()">Z-Report</button>
+      </div>
+    </div>
+    <div class="cat-tabs" id="cat-tabs"></div>
+    <div class="svc-area" id="svc-area"></div>
+  </div>
+
+  <div class="order-panel">
+    <div class="order-header">
+      <span class="order-header-title">Current order</span>
+      <div class="order-header-btns">
+        <span class="clear-btn" onclick="clearCart()">Clear</span>
+      </div>
+    </div>
+    <div class="plate-bar">
+      <span class="plate-label">🚘 Plate</span>
+      <input class="plate-input" type="text" id="plate-input" placeholder="Optional — e.g. SBA1234A" maxlength="12">
+    </div>
+    <div class="order-items" id="order-items"></div>
+    <div class="totals-area">
+      <div class="total-row"><span class="lbl">Subtotal</span><span class="val" id="subtotal-display">$0.00</span></div>
+      <div class="grand-total-row">
+        <span style="font-size:15px;font-weight:600;color:var(--text)">Total</span>
+        <span style="font-size:20px;font-weight:700;color:var(--amber);font-family:monospace" id="total-display">$0.00</span>
+      </div>
+      <button class="pay-btn" id="pay-btn" onclick="openPayment()" disabled>Make Payment</button>
+    </div>
+  </div>
+</div>
+
+<!-- PAYMENT MODAL -->
+<div class="modal-overlay" id="payment-modal">
+  <div class="modal">
+    <div class="modal-title">Make Payment</div>
+    <div class="modal-sub" id="pay-modal-sub">Select payment method</div>
+    <div class="modal-total">
+      <span class="lbl">Amount Due</span>
+      <span class="amt" id="pay-modal-amount">$0.00</span>
+    </div>
+    <div class="pay-methods">
+      <button class="pay-method-btn" id="pm-cash" onclick="selectPayMethod('cash')"><span class="pm-icon">💵</span><span>Cash</span></button>
+      <button class="pay-method-btn" id="pm-paynow" onclick="selectPayMethod('paynow')"><span class="pm-icon">📱</span><span>PayNow</span></button>
+    </div>
+    <div class="cash-ui" id="cash-ui" style="display:none">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:7px">Customer pays:</div>
+      <div class="cash-presets" id="cash-presets"></div>
+      <div class="change-display" id="change-display" style="display:none">
+        <span class="lbl">Change to give</span>
+        <span class="amt" id="change-amount">$0.00</span>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closePayment()">Cancel</button>
+      <button class="btn-primary" id="pay-confirm-btn" onclick="confirmPayment()" disabled>Confirm & End Transaction</button>
+    </div>
+  </div>
+</div>
+
+<!-- CUSTOM ITEM MODAL -->
+<div class="modal-overlay" id="custom-modal">
+  <div class="custom-modal-box">
+    <div class="modal-title" style="margin-bottom:14px">Custom Item</div>
+    <input class="custom-input" type="text" id="custom-name-input" placeholder="Description (e.g. Touch-up Polish)" maxlength="60">
+    <input class="custom-input" type="number" id="custom-price-input" placeholder="Price ($)" min="0" step="0.50" style="margin-bottom:0">
+    <div class="modal-actions" style="margin-top:12px">
+      <button class="btn-secondary" onclick="closeCustomModal()">Cancel</button>
+      <button class="btn-primary" onclick="confirmCustomItem()">Add to Order</button>
+    </div>
+  </div>
+</div>
+
+<!-- EMAIL INVOICE MODAL -->
+<div class="modal-overlay" id="email-modal">
+  <div class="email-modal-box">
+    <div class="modal-title">📧 Email Invoice</div>
+    <div class="modal-sub">Send a professional invoice to the customer</div>
+    <input class="email-input" type="email" id="email-to-input" placeholder="customer@email.com" oninput="document.getElementById('email-status').textContent=''">
+    <div class="email-status" id="email-status"></div>
+    <div class="invoice-preview" id="invoice-preview"></div>
+    <div id="email-setup-note" style="display:none" class="email-not-configured">
+      ⚠️ EmailJS not configured — fill in the 3 constants at the top of index.html.<br>
+      <a href="https://www.emailjs.com" target="_blank">Sign up free at emailjs.com →</a><br>
+      Until then, use <b>Print Receipt</b> to save as PDF and email manually.
+    </div>
+    <div class="modal-actions" style="margin-top:6px">
+      <button class="btn-secondary" onclick="closeEmailModal()">Cancel</button>
+      <button class="btn-secondary" onclick="printReceiptFromEmail()" style="flex:1">🖨 Print</button>
+      <button class="btn-blue" id="send-email-btn" onclick="sendInvoiceEmail()">Send Email</button>
+    </div>
+  </div>
+</div>
+
+<!-- REPORT MODAL -->
+<div class="modal-overlay" id="report-modal">
+  <div class="report-modal">
+    <div id="report-content"></div>
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn-secondary" onclick="closeReport()">Close</button>
+      <button class="btn-primary" onclick="window.print()" style="flex:1">🖨 Print</button>
+    </div>
+  </div>
+</div>
+
+<!-- TERMINAL CLOSED -->
+<div class="terminal-closed" id="terminal-closed">
+  <span style="font-size:48px">🔒</span>
+  <span style="font-size:18px;font-weight:600;color:var(--text)">Terminal Closed</span>
+  <span style="font-size:13px;color:var(--text2)" id="tc-date"></span>
+  <button class="tc-reopen" onclick="reopenTerminal()">Re-open Terminal</button>
+</div>
+
+<!-- ORDER COMPLETE -->
+<div class="order-complete" id="order-complete">
+  <div class="oc-card">
+    <div class="oc-check">✅</div>
+    <div class="oc-label">Transaction Complete</div>
+    <div class="oc-txnid" id="oc-txnid">—</div>
+    <div class="oc-total" id="oc-total"></div>
+    <div class="oc-btns">
+      <button class="oc-btn primary" onclick="openEmailFromComplete()">📧 Email Invoice</button>
+      <button class="oc-btn" onclick="printLastReceipt()">🖨 Print</button>
+    </div>
+  </div>
+</div>
+
+<!-- RECEIPT PRINT (fallback) -->
+<div id="receipt-print"></div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"><span id="t-icon">✅</span><span id="t-msg">Done</span></div>
+
+<script>
+// ══════════════════════════════════════════════════
+//  LOCAL STORAGE — crash/refresh protection
+// ══════════════════════════════════════════════════
+function saveTxnLocally(txn) {
+  try {
+    const stored = JSON.parse(localStorage.getItem('dow_txns') || '[]');
+    const filtered = stored.filter(t => t.txnId !== txn.txnId);
+    filtered.push({...txn, _localSaved: Date.now(), _synced: false});
+    if (filtered.length > 1000) filtered.splice(0, filtered.length - 1000);
+    localStorage.setItem('dow_txns', JSON.stringify(filtered));
+  } catch(e) { console.warn('localStorage save failed:', e.message); }
+}
+
+function markTxnSynced(txnId) {
+  try {
+    const stored = JSON.parse(localStorage.getItem('dow_txns') || '[]');
+    const idx = stored.findIndex(t => t.txnId === txnId);
+    if (idx !== -1) { stored[idx]._synced = true; localStorage.setItem('dow_txns', JSON.stringify(stored)); }
+  } catch(e) {}
+}
+
+function voidTxnLocally(txnId) {
+  try {
+    const stored = JSON.parse(localStorage.getItem('dow_txns') || '[]');
+    const idx = stored.findIndex(t => t.txnId === txnId);
+    if (idx !== -1) { stored[idx].voided = true; localStorage.setItem('dow_txns', JSON.stringify(stored)); }
+  } catch(e) {}
+}
+
+function initSessionFromLocal() {
+  try {
+    const stored = JSON.parse(localStorage.getItem('dow_txns') || '[]');
+    const d = new Date();
+    const m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const today = d.getDate()+' '+m[d.getMonth()]+' '+d.getFullYear();
+    window._sessionTxns = stored.filter(t => t.date === today && !t.voided);
+    updateSyncDot();
+  } catch(e) { window._sessionTxns = []; }
+}
+
+function getPendingCount() {
+  try {
+    return JSON.parse(localStorage.getItem('dow_txns') || '[]').filter(t => !t._synced).length;
+  } catch(e) { return 0; }
+}
+
+function updateSyncDot() {
+  const dot = document.getElementById('sync-dot');
+  if (!dot) return;
+  const pending = getPendingCount();
+  if (window._fbReady) {
+    dot.className = pending > 0 ? 'sync-dot syncing' : 'sync-dot synced';
+    dot.title = pending > 0 ? pending+' transaction(s) pending sync' : 'All synced';
+  } else {
+    const total = JSON.parse(localStorage.getItem('dow_txns') || '[]').length;
+    dot.className = 'sync-dot';
+    dot.style.background = total > 0 ? 'var(--amber)' : 'var(--text3)';
+    dot.title = total > 0 ? total+' transaction(s) saved locally (Firebase not connected)' : 'Firebase not connected';
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  SERVICE DATA
+// ══════════════════════════════════════════════════
+const CATEGORIES = [
+  { id: 'exterior', name: 'Exterior Wash', services: [
+    { id: 'quickie',     name: 'Quickie',    small: 18,  large: 23  },
+    { id: 'refresh',     name: 'Refresh',    small: 25,  large: 30  },
+    { id: 'enth-ext',    name: 'Enthusiast', small: 35,  large: 45  },
+    { id: 'fanatic-ext', name: 'Fanatic',    small: 55,  large: 65  },
+  ]},
+  { id: 'bike', name: 'Bike', services: [
+    { id: 'bike-wash',    name: 'Bike Wash',                 price: 38  },
+    { id: 'bike-polish',  name: 'Polish / Paint Correction', price: 138 },
+    { id: 'bike-ceramic', name: 'SONAX CC One',              price: 238 },
+  ]},
+  { id: 'interior', name: 'Interior', services: [
+    { id: 'fanatic-int',  name: 'Fanatic Interior',  small: 168, large: 228 },
+    { id: 'seat-extract', name: 'Seat Extraction',   price: 100 },
+  ]},
+  { id: 'paint', name: 'Paint Correction', services: [
+    { id: 'enth-polish',    name: 'Enthusiast\nSingle-step Polish', small: 168, large: 228 },
+    { id: 'fanatic-polish', name: 'Fanatic\nMulti-step Polish',     small: 288, large: 358 },
+  ]},
+  { id: 'ceramic', name: 'Ceramic Coating', services: [
+    { id: 'cc-enth',     name: 'SONAX CC One\nEnthusiast', small: 338, large: 388 },
+    { id: 'cc-fanatic',  name: 'SONAX CC One\nFanatic',    small: 438, large: 488 },
+    { id: 'evo-fanatic', name: 'SONAX EVO\nFanatic Only',  small: 888, large: 988 },
+  ]},
+  { id: 'addons', name: 'Coating Add-ons', services: [
+    { id: 'addon-int',      name: 'Full Interior Detailing',    price: 98  },
+    { id: 'addon-int-seat', name: 'Interior + Seat Extraction', price: 168 },
+    { id: 'addon-rim-face', name: 'Rim Coating (Face Only)',    price: 118 },
+    { id: 'addon-rim-full', name: 'Full Rim Coating',           price: 198 },
+    { id: 'addon-glass',    name: 'Glass Panel Coating',        price: 128 },
+  ]},
+  { id: 'alacarte', name: 'Ala Carte', services: [
+    { id: 'antibac',         name: 'Interior Anti-Bac Wipedown',   price: 18  },
+    { id: 'leather',         name: 'Leather Conditioning',         price: 38  },
+    { id: 'extraction-seat', name: 'Extraction/Steam (Per Seat)',  price: 58  },
+    { id: 'sanitation',      name: 'Full Sanitation + Deep Clean', price: 58  },
+    { id: 'fumigation',      name: 'Fumigation + Vacuum + Anti-Bac', price: 138 },
+    { id: 'glass-coat',      name: 'Glass Coating',                price: 138 },
+    { id: 'engine-bay',      name: 'Engine Bay Detailing',         price: 68  },
+  ]},
+];
+
+// ══════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════
+let cart = [];
+let activeCat = CATEGORIES[0].id;
+let pendingSizeSvc = null;
+let selectedPayMethod = null;
+let selectedCashAmount = null;
+let txnCounter = parseInt(localStorage.getItem('dow_txn_counter') || '0');
+let lastTxn = null;
+let adminCallback = null;
+let statsUnlocked = false;
+
+const OPEN_PIN = '1234';
+const ADMIN_PIN_ENC = btoa('9999');
+
+// ══════════════════════════════════════════════════
+//  LOGIN PIN
+// ══════════════════════════════════════════════════
+let pinEntry = '';
+function pinUpdateDots(){
+  for(let i=0;i<4;i++) document.getElementById('pd'+i).classList.toggle('filled',i<pinEntry.length);
+}
+function pinPress(d){ if(pinEntry.length>=4) return; pinEntry+=d; pinUpdateDots(); if(pinEntry.length===4) checkPin(); }
+function pinDel(){ pinEntry=pinEntry.slice(0,-1); pinUpdateDots(); }
+function pinClear(){ pinEntry=''; pinUpdateDots(); }
+function checkPin(){
+  if(pinEntry===OPEN_PIN){
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('app').style.display='flex';
+  } else {
+    document.getElementById('pin-error').textContent='Wrong PIN.';
+    pinEntry=''; pinUpdateDots();
+    setTimeout(()=>document.getElementById('pin-error').textContent='',2000);
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  ADMIN PIN
+// ══════════════════════════════════════════════════
+let adminEntry = '';
+function adminPinValid(input){ return btoa(input.split('').reverse().join(''))===ADMIN_PIN_ENC; }
+function adminUpdateDots(){ for(let i=0;i<4;i++) document.getElementById('apd'+i).classList.toggle('filled',i<adminEntry.length); }
+function adminPress(d){ if(adminEntry.length>=4) return; adminEntry+=d; adminUpdateDots(); if(adminEntry.length===4) checkAdminPin(); }
+function adminDel(){ adminEntry=adminEntry.slice(0,-1); adminUpdateDots(); }
+function adminPinClear(){ adminEntry=''; adminUpdateDots(); }
+function checkAdminPin(){
+  if(adminPinValid(adminEntry)){
+    closeAdminModal();
+    if(adminCallback){ adminCallback(); adminCallback=null; }
+  } else {
+    document.getElementById('admin-pin-error').textContent='Wrong PIN.';
+    adminEntry=''; adminUpdateDots();
+    setTimeout(()=>document.getElementById('admin-pin-error').textContent='',2000);
+  }
+}
+function openAdminModal(title,sub,cb){
+  adminEntry=''; adminUpdateDots();
+  document.getElementById('admin-title').textContent=title||'Admin Access';
+  document.getElementById('admin-sub').textContent=sub||'Enter admin PIN';
+  document.getElementById('admin-pin-error').textContent='';
+  adminCallback=cb;
+  document.getElementById('admin-overlay').classList.add('open');
+}
+function closeAdminModal(){
+  document.getElementById('admin-overlay').classList.remove('open');
+  adminEntry=''; adminUpdateDots();
+}
+
+// ══════════════════════════════════════════════════
+//  CATEGORY TABS
+// ══════════════════════════════════════════════════
+function renderCatTabs(){
+  document.getElementById('cat-tabs').innerHTML = CATEGORIES.map(c=>`
+    <button class="cat-tab${c.id===activeCat?' active':''}"
+      ontouchstart="event.preventDefault();setCategory('${c.id}')"
+      onclick="setCategory('${c.id}')">${c.name}</button>
+  `).join('');
+}
+function setCategory(catId){ activeCat=catId; renderCatTabs(); renderServices(); }
+
+// ══════════════════════════════════════════════════
+//  SERVICE GRID
+// ══════════════════════════════════════════════════
+function renderServices(){
+  const cat = CATEGORIES.find(c=>c.id===activeCat);
+  let html='';
+  for(const svc of cat.services){
+    const inCart = cart.filter(i=>i.svcId===svc.id||i.svcId===svc.id+'-small'||i.svcId===svc.id+'-large').reduce((s,i)=>s+i.qty,0);
+    const badge = inCart>0?`<div class="svc-qty-badge">${inCart}</div>`:'';
+    const cls = inCart>0?' in-cart':'';
+    const hasSize = svc.small!==undefined;
+    const priceLabel = hasSize?`S $${svc.small} / L $${svc.large}`:`$${svc.price}`;
+    const nameHtml = svc.name.replace(/\n/g,'<br>');
+    html+=`<button class="svc-btn${cls}"
+      ontouchstart="event.preventDefault();svcClick('${svc.id}')"
+      onclick="svcClick('${svc.id}')">
+      ${badge}
+      <div class="svc-name">${nameHtml}</div>
+      <div class="svc-price">${priceLabel}</div>
+    </button>`;
+  }
+  html+=`<button class="svc-btn svc-btn-custom"
+    ontouchstart="event.preventDefault();openCustomModal()"
+    onclick="openCustomModal()">
+    <div class="svc-name" style="color:var(--text3)">+ Custom Item</div>
+    <div class="svc-price" style="color:var(--text3)">any price</div>
+  </button>`;
+  document.getElementById('svc-area').innerHTML=html;
+}
+
+function svcClick(svcId){
+  const svc = CATEGORIES.flatMap(c=>c.services).find(s=>s.id===svcId);
+  if(!svc) return;
+  if(svc.small!==undefined) openSizePicker(svc);
+  else addToCart({svcId:svc.id, name:svc.name.replace(/\n/g,' '), price:svc.price});
+}
+
+// ══════════════════════════════════════════════════
+//  SIZE PICKER
+// ══════════════════════════════════════════════════
+function openSizePicker(svc){
+  pendingSizeSvc=svc;
+  document.getElementById('size-title').textContent=svc.name.replace(/\n/g,' ');
+  document.getElementById('size-small-price').textContent='$'+svc.small;
+  document.getElementById('size-large-price').textContent='$'+svc.large;
+  document.getElementById('size-overlay').classList.add('open');
+}
+function closeSizePicker(){ document.getElementById('size-overlay').classList.remove('open'); pendingSizeSvc=null; }
+function confirmSize(size){
+  if(!pendingSizeSvc) return;
+  const svc=pendingSizeSvc;
+  const price=size==='small'?svc.small:svc.large;
+  const label=size==='small'?'(S)':'(L)';
+  addToCart({svcId:svc.id+'-'+size, name:svc.name.replace(/\n/g,' ')+' '+label, price});
+  closeSizePicker();
+}
+
+// ══════════════════════════════════════════════════
+//  CUSTOM ITEM
+// ══════════════════════════════════════════════════
+function openCustomModal(){
+  document.getElementById('custom-name-input').value='';
+  document.getElementById('custom-price-input').value='';
+  document.getElementById('custom-modal').classList.add('open');
+  setTimeout(()=>document.getElementById('custom-name-input').focus(),100);
+}
+function closeCustomModal(){ document.getElementById('custom-modal').classList.remove('open'); }
+function confirmCustomItem(){
+  const name=document.getElementById('custom-name-input').value.trim()||'Custom Item';
+  const price=parseFloat(document.getElementById('custom-price-input').value);
+  if(isNaN(price)||price<0){ showToast('⚠️','Enter a valid price'); return; }
+  addToCart({svcId:'custom-'+Date.now(), name, price});
+  closeCustomModal();
+}
+
+// ══════════════════════════════════════════════════
+//  CART
+// ══════════════════════════════════════════════════
+function addToCart(item){
+  const existing=cart.find(i=>i.svcId===item.svcId);
+  if(existing) existing.qty++; else cart.push({...item,qty:1});
+  renderCart(); renderServices();
+}
+function removeFromCart(svcId){
+  const idx=cart.findIndex(i=>i.svcId===svcId);
+  if(idx===-1) return;
+  if(cart[idx].qty>1) cart[idx].qty--; else cart.splice(idx,1);
+  renderCart(); renderServices();
+}
+function addToCartById(svcId){
+  const item=cart.find(i=>i.svcId===svcId);
+  if(item){ item.qty++; renderCart(); renderServices(); }
+}
+function clearCart(){
+  if(cart.length===0) return;
+  if(!confirm('Clear current order?')) return;
+  cart=[]; document.getElementById('plate-input').value='';
+  renderCart(); renderServices();
+}
+function getTotal(){ return cart.reduce((s,i)=>s+i.price*i.qty,0); }
+
+function renderCart(){
+  const el=document.getElementById('order-items');
+  const total=getTotal();
+  document.getElementById('subtotal-display').textContent='$'+total.toFixed(2);
+  document.getElementById('total-display').textContent='$'+total.toFixed(2);
+  document.getElementById('pay-btn').disabled=cart.length===0;
+  updateTopbarStats();
+  if(cart.length===0){
+    el.innerHTML='<div class="empty-order"><span style="font-size:28px">🚗</span><span>No services added</span></div>';
+    return;
+  }
+  el.innerHTML=cart.map(item=>`
+    <div class="order-item">
+      <div class="qty-ctrl">
+        <button class="qty-btn" ontouchstart="event.preventDefault();removeFromCart('${item.svcId}')" onclick="removeFromCart('${item.svcId}')">−</button>
+        <span class="qty-num">${item.qty}</span>
+        <button class="qty-btn" ontouchstart="event.preventDefault();addToCartById('${item.svcId}')" onclick="addToCartById('${item.svcId}')">+</button>
+      </div>
+      <span class="order-item-name">${item.name}</span>
+      <span class="order-item-price">$${(item.price*item.qty).toFixed(2)}</span>
+    </div>`).join('');
+}
+
+// ══════════════════════════════════════════════════
+//  TOPBAR STATS
+// ══════════════════════════════════════════════════
+function updateTopbarStats(){
+  const el=document.getElementById('topbar-stats');
+  if(!statsUnlocked){ el.textContent='🔒 Sales'; return; }
+  const todayTxns=(window._sessionTxns||[]).filter(t=>!t.voided&&t.date===fmtDate(new Date()));
+  const rev=todayTxns.reduce((s,t)=>s+t.total,0);
+  el.textContent=todayTxns.length+' txns · $'+rev.toFixed(2);
+}
+function unlockStats(){
+  if(statsUnlocked){ statsUnlocked=false; updateTopbarStats(); return; }
+  openAdminModal('View Sales','Enter admin PIN to unlock',()=>{ statsUnlocked=true; updateTopbarStats(); });
+}
+
+// ══════════════════════════════════════════════════
+//  PAYMENT
+// ══════════════════════════════════════════════════
+function openPayment(){
+  if(cart.length===0) return;
+  selectedPayMethod=null; selectedCashAmount=null;
+  document.getElementById('pay-modal-amount').textContent='$'+getTotal().toFixed(2);
+  document.getElementById('pay-modal-sub').textContent='Select payment method';
+  document.getElementById('cash-ui').style.display='none';
+  document.getElementById('pay-confirm-btn').disabled=true;
+  document.querySelectorAll('.pay-method-btn').forEach(b=>b.classList.remove('selected'));
+  document.getElementById('payment-modal').classList.add('open');
+}
+function closePayment(){ document.getElementById('payment-modal').classList.remove('open'); }
+
+function selectPayMethod(method){
+  selectedPayMethod=method; selectedCashAmount=null;
+  document.querySelectorAll('.pay-method-btn').forEach(b=>b.classList.remove('selected'));
+  document.getElementById('pm-'+method).classList.add('selected');
+  document.getElementById('cash-ui').style.display=method==='cash'?'block':'none';
+  if(method==='paynow'){
+    document.getElementById('pay-confirm-btn').disabled=false;
+    document.getElementById('pay-modal-sub').textContent='Customer scans PayNow QR';
+  } else {
+    document.getElementById('pay-confirm-btn').disabled=true;
+    document.getElementById('pay-modal-sub').textContent='Enter cash amount received';
+    renderCashPresets();
+  }
+}
+
+function renderCashPresets(){
+  const total=getTotal();
+  const roundUp=(v,to)=>Math.ceil(v/to)*to;
+  const presets=[roundUp(total,1),roundUp(total,5),roundUp(total,10),roundUp(total,50),roundUp(total,100)]
+    .filter((v,i,a)=>a.indexOf(v)===i&&v>=total).slice(0,5);
+  document.getElementById('cash-presets').innerHTML=presets.map(p=>`
+    <button class="cash-preset-btn${selectedCashAmount===p?' selected':''}" onclick="selectCashPreset(${p})">$${p}</button>`).join('');
+  document.getElementById('change-display').style.display='none';
+}
+
+function selectCashPreset(amount){
+  selectedCashAmount=amount;
+  document.querySelectorAll('.cash-preset-btn').forEach(b=>b.classList.remove('selected'));
+  event.target.classList.add('selected');
+  const change=amount-getTotal();
+  document.getElementById('change-display').style.display='flex';
+  document.getElementById('change-amount').textContent='$'+Math.max(0,change).toFixed(2);
+  document.getElementById('pay-confirm-btn').disabled=false;
+}
+
+async function confirmPayment(){
+  if(!selectedPayMethod||(selectedPayMethod==='cash'&&!selectedCashAmount)) return;
+  const total=getTotal();
+  const now=new Date();
+  txnCounter++;
+  localStorage.setItem('dow_txn_counter',txnCounter);
+  const txnId='DOW-'+fmtDateCompact(now)+'-'+String(txnCounter).padStart(4,'0');
+  const plate = document.getElementById('plate-input').value.trim().toUpperCase();
+  const txnData={
+    txnId, date:fmtDate(now), time:now.toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),
+    hour:now.getHours(), outlet:'DOW Detailing', carPlate: plate||null,
+    items:cart.map(i=>({name:i.name,price:i.price,qty:i.qty})),
+    subtotal:total, total,
+    payments:[{type:selectedPayMethod,amount:total}],
+    cashTendered:selectedPayMethod==='cash'?selectedCashAmount:null,
+    change:selectedPayMethod==='cash'?Math.max(0,selectedCashAmount-total):0,
+    voided:false, timestamp:now.toISOString(), createdAt:now.toISOString(),
+  };
+
+  // Save to localStorage immediately — crash/refresh protection
+  saveTxnLocally(txnData);
+  window._sessionTxns = window._sessionTxns || [];
+  window._sessionTxns.push({...txnData, _sessionId: Date.now()});
+  updateSyncDot();
+
+  if(window._fbReady&&window._db){
+    try {
+      await window._addDoc(window._collection(window._db,'transactions'),{...txnData,timestamp:window._serverTimestamp()});
+      markTxnSynced(txnId);
+      updateSyncDot();
+    } catch(e){ console.warn('Firebase save failed:',e.message); }
+  }
+
+  lastTxn=txnData;
+  buildReceiptPrint(txnData);
+  closePayment();
+  cart=[]; document.getElementById('plate-input').value='';
+  renderCart(); renderServices();
+  updateTopbarStats();
+
+  document.getElementById('oc-txnid').textContent=txnId;
+  document.getElementById('oc-total').textContent=(plate?plate+' · ':'')+' $'+total.toFixed(2)+' · '+selectedPayMethod.toUpperCase();
+  document.getElementById('order-complete').classList.add('open');
+}
+
+// ══════════════════════════════════════════════════
+//  INVOICE HTML GENERATOR
+// ══════════════════════════════════════════════════
+function generateInvoiceHTML(txn, recipientEmail){
+  const rowsHtml=txn.items.map(i=>`
+    <tr>
+      <td style="padding:7px 0;border-bottom:1px solid #f0f0f0;color:#1a1a1a;line-height:1.3">${i.name}</td>
+      <td style="padding:7px 0;border-bottom:1px solid #f0f0f0;text-align:center;color:#555">${i.qty}</td>
+      <td style="padding:7px 0;border-bottom:1px solid #f0f0f0;text-align:right;color:#555;font-family:monospace">$${i.price.toFixed(2)}</td>
+      <td style="padding:7px 0;border-bottom:1px solid #f0f0f0;text-align:right;font-family:monospace;color:#1a1a1a">$${(i.price*i.qty).toFixed(2)}</td>
+    </tr>`).join('');
+  const payLabel=txn.payments.map(p=>p.type.toUpperCase()).join('+');
+  const changeRow=txn.change>0?`<tr><td colspan="3" style="padding:4px 0;font-size:12px;color:#888">Change Given</td><td style="text-align:right;font-size:12px;color:#888;font-family:monospace">$${txn.change.toFixed(2)}</td></tr>`:'';
+  const toLine=recipientEmail?`<div style="font-size:12px;color:#666">Invoice for: <strong>${recipientEmail}</strong></div>`:'';
+
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice ${txn.txnId} — DOW Detailing</title></head>
+<body style="margin:0;padding:20px;background:#f4f4f4;font-family:Arial,Helvetica,sans-serif">
+<div style="max-width:600px;margin:0 auto;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.1)">
+  <div style="background:#1a1a1a;padding:24px 28px;display:flex;justify-content:space-between;align-items:center">
+    <div>
+      <div style="color:#e8a020;font-size:22px;font-weight:700;letter-spacing:-0.3px">DOW DETAILING</div>
+      <div style="color:#a09890;font-size:12px;margin-top:2px">Car Detailing Services</div>
+    </div>
+    <div style="text-align:right">
+      <div style="color:#f0ede8;font-size:20px;font-weight:700">INVOICE</div>
+      <div style="color:#a09890;font-size:12px;font-family:monospace">#${txn.txnId}</div>
+    </div>
+  </div>
+  <div style="padding:20px 28px;border-bottom:1px solid #eee;background:#fafafa">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <div style="font-size:12px;color:#888;margin-bottom:3px">DATE</div>
+        <div style="font-size:14px;font-weight:600;color:#1a1a1a">${txn.date}</div>
+        <div style="font-size:12px;color:#888">${txn.time}</div>
+      </div>
+      <div style="text-align:right">
+        ${toLine}
+        ${txn.carPlate?`<div style="margin-top:6px;font-size:12px;color:#666">Vehicle: <strong style="font-family:monospace;font-size:14px;color:#1a1a1a">${txn.carPlate}</strong></div>`:''}
+      </div>
+    </div>
+  </div>
+  <div style="padding:24px 28px">
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead>
+        <tr style="border-bottom:2px solid #1a1a1a">
+          <th style="text-align:left;padding:0 0 8px;font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Service</th>
+          <th style="text-align:center;padding:0 0 8px;font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Qty</th>
+          <th style="text-align:right;padding:0 0 8px;font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Unit Price</th>
+          <th style="text-align:right;padding:0 0 8px;font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Amount</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+      <tfoot>
+        <tr>
+          <td colspan="3" style="padding:12px 0 6px;font-size:16px;font-weight:700;color:#1a1a1a;border-top:2px solid #1a1a1a">TOTAL</td>
+          <td style="padding:12px 0 6px;text-align:right;font-size:18px;font-weight:700;color:#e8a020;font-family:monospace;border-top:2px solid #1a1a1a">$${txn.total.toFixed(2)}</td>
+        </tr>
+        <tr>
+          <td colspan="3" style="padding:4px 0;font-size:12px;color:#888">Payment Method</td>
+          <td style="text-align:right;font-size:12px;color:#888;padding:4px 0">${payLabel}</td>
+        </tr>
+        ${changeRow}
+      </tfoot>
+    </table>
+  </div>
+  <div style="background:#f9f9f9;padding:18px 28px;text-align:center;border-top:1px solid #eee">
+    <div style="font-size:14px;font-weight:600;color:#1a1a1a">Thank you for choosing DOW Detailing!</div>
+    <div style="font-size:12px;color:#888;margin-top:4px">We appreciate your trust in our services.</div>
+    <div style="font-size:11px;color:#bbb;margin-top:6px;font-family:monospace">Ref: ${txn.txnId}</div>
+  </div>
+</div>
+</body></html>`;
+}
+
+// ══════════════════════════════════════════════════
+//  EMAIL INVOICE
+// ══════════════════════════════════════════════════
+function openEmailFromComplete(){
+  document.getElementById('order-complete').classList.remove('open');
+  if(lastTxn) openEmailModal(lastTxn);
+}
+function openEmailModal(txn){
+  document.getElementById('email-to-input').value='';
+  document.getElementById('email-status').textContent='';
+  document.getElementById('email-status').style.color='';
+  document.getElementById('email-setup-note').style.display=EMAIL_CONFIGURED?'none':'block';
+  renderInvoicePreview(txn, '');
+  document.getElementById('email-modal').classList.add('open');
+  setTimeout(()=>document.getElementById('email-to-input').focus(),100);
+}
+function closeEmailModal(){ document.getElementById('email-modal').classList.remove('open'); }
+
+function renderInvoicePreview(txn, email){
+  const rowsHtml=txn.items.map(i=>`
+    <tr>
+      <td class="inv-tbl">${i.name}</td>
+      <td class="inv-tbl" style="text-align:center">${i.qty}</td>
+      <td class="inv-tbl" style="text-align:right;font-family:monospace">$${i.price.toFixed(2)}</td>
+      <td class="inv-tbl" style="text-align:right;font-family:monospace">$${(i.price*i.qty).toFixed(2)}</td>
+    </tr>`).join('');
+  const payLabel=txn.payments.map(p=>p.type.toUpperCase()).join('+');
+  document.getElementById('invoice-preview').innerHTML=`
+    <div class="inv-header">
+      <div class="inv-header-brand">DOW DETAILING</div>
+      <div class="inv-header-sub">Car Detailing Services</div>
+    </div>
+    <div class="inv-meta">
+      <div class="inv-meta-left">
+        <div class="inv-num">INVOICE</div>
+        <div class="inv-date">#${txn.txnId}</div>
+        <div class="inv-date">${txn.date} · ${txn.time}</div>
+      </div>
+      <div style="text-align:right">
+        ${email?`<div style="font-size:11px;color:#666">To: <strong>${email}</strong></div>`:''}
+        ${txn.carPlate?`<div style="font-size:12px;color:#666;margin-top:4px">Vehicle: <strong style="font-family:monospace">${txn.carPlate}</strong></div>`:''}
+      </div>
+    </div>
+    <div class="inv-body">
+      <table class="inv-tbl" style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr>
+          <th class="inv-tbl" style="text-align:left">Service</th>
+          <th class="inv-tbl" style="text-align:center">Qty</th>
+          <th class="inv-tbl" style="text-align:right">Unit</th>
+          <th class="inv-tbl" style="text-align:right">Amount</th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+        <tfoot>
+          <tr class="inv-total-row"><td colspan="3"><strong>TOTAL</strong></td><td>$${txn.total.toFixed(2)}</td></tr>
+          <tr class="inv-pay-row"><td colspan="3">Payment: ${payLabel}</td><td style="text-align:right">$${txn.total.toFixed(2)}</td></tr>
+          ${txn.change>0?`<tr class="inv-pay-row"><td colspan="3">Change Given</td><td style="text-align:right">$${txn.change.toFixed(2)}</td></tr>`:''}
+        </tfoot>
+      </table>
+    </div>
+    <div class="inv-footer">Thank you for choosing DOW Detailing!</div>`;
+}
+
+// Update preview live as email is typed
+document.getElementById('email-to-input').addEventListener('input', function(){
+  if(lastTxn) renderInvoicePreview(lastTxn, this.value.trim());
+});
+
+async function sendInvoiceEmail(){
+  const toEmail=document.getElementById('email-to-input').value.trim();
+  if(!toEmail||!toEmail.includes('@')){ showToast('⚠️','Enter a valid email address'); return; }
+  if(!lastTxn) return;
+
+  const statusEl=document.getElementById('email-status');
+  const sendBtn=document.getElementById('send-email-btn');
+
+  if(!EMAIL_CONFIGURED){
+    statusEl.textContent='EmailJS not configured — see setup instructions below.';
+    statusEl.style.color='var(--amber)';
+    return;
+  }
+
+  sendBtn.disabled=true; sendBtn.textContent='Sending…';
+  statusEl.textContent=''; statusEl.style.color='';
+
+  try {
+    const invoiceHtml=generateInvoiceHTML(lastTxn, toEmail);
+    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+      to_email: toEmail,
+      invoice_number: lastTxn.txnId,
+      invoice_date: lastTxn.date,
+      invoice_total: '$'+lastTxn.total.toFixed(2),
+      invoice_html: invoiceHtml,
+    });
+    statusEl.textContent='✅ Invoice sent to '+toEmail;
+    statusEl.style.color='var(--green)';
+    showToast('📧','Invoice sent to '+toEmail);
+    setTimeout(closeEmailModal, 2000);
+  } catch(e){
+    statusEl.textContent='Failed to send: '+e.text||e.message||'Unknown error';
+    statusEl.style.color='var(--red)';
+  } finally {
+    sendBtn.disabled=false; sendBtn.textContent='Send Email';
+  }
+}
+
+function printReceiptFromEmail(){
+  if(lastTxn) buildReceiptPrint(lastTxn);
+  window.print();
+}
+
+// ══════════════════════════════════════════════════
+//  PRINT RECEIPT (fallback)
+// ══════════════════════════════════════════════════
+function buildReceiptPrint(txn){
+  const rows=txn.items.map(i=>`
+    <tr><td class="rp-q">${i.qty}×</td><td class="rp-n">${i.name}</td><td class="rp-r">$${(i.price*i.qty).toFixed(2)}</td></tr>`).join('');
+  const payRows=txn.payments.map(p=>`
+    <tr class="rp-pay"><td colspan="2">${p.type.toUpperCase()}</td><td class="rp-r">$${p.amount.toFixed(2)}</td></tr>`).join('');
+  const changeRow=txn.change>0?`<tr class="rp-pay"><td colspan="2">CHANGE</td><td class="rp-r">$${txn.change.toFixed(2)}</td></tr>`:'';
+  document.getElementById('receipt-print').innerHTML=`
+    <div class="rp-head"><div style="font-size:16pt;font-weight:bold;margin-bottom:1mm">DOW DETAILING</div>
+    <div style="font-size:9pt">Car Detailing Services</div></div>
+    <hr class="rp-sep">
+    <div class="rp-meta">${txn.date}  ${txn.time}<br>TXN: ${txn.txnId}${txn.carPlate?'<br>Vehicle: '+txn.carPlate:''}</div>
+    <hr class="rp-dash">
+    <table class="rp-tbl">${rows}
+    <tr class="rp-tot"><td colspan="2"><b>TOTAL</b></td><td class="rp-r"><b>$${txn.total.toFixed(2)}</b></td></tr>
+    <tr><td colspan="3"><hr class="rp-dash" style="margin:1.5mm 0"></td></tr>
+    ${payRows}${changeRow}</table>
+    <hr class="rp-sep">
+    <div class="rp-foot">Thank you!<br>DOW Detailing</div>`;
+}
+function printLastReceipt(){
+  document.getElementById('order-complete').classList.remove('open');
+  if(lastTxn) buildReceiptPrint(lastTxn);
+  window.print();
+}
+
+// ══════════════════════════════════════════════════
+//  REPORTS
+// ══════════════════════════════════════════════════
+function fmtDate(d){
+  const m=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return d.getDate()+' '+m[d.getMonth()]+' '+d.getFullYear();
+}
+function fmtDateCompact(d){
+  return String(d.getFullYear())+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+}
+
+function buildReport(txns,type){
+  const total=txns.reduce((s,t)=>s+t.total,0);
+  const count=txns.length;
+  const avg=count>0?total/count:0;
+  const pay={cash:0,paynow:0};
+  txns.forEach(t=>(t.payments||[]).forEach(p=>{pay[p.type]=(pay[p.type]||0)+p.amount;}));
+  const items={};
+  txns.forEach(t=>(t.items||[]).forEach(i=>{items[i.name]=(items[i.name]||0)+i.qty;}));
+  const topItems=Object.entries(items).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const now=new Date();
+
+  return `
+    <div class="report-header">
+      <div class="rh-brand">DOW Detailing</div>
+      <div class="rh-type">${type==='X'?'X-Report (Session Summary)':'Z-Report (End of Day)'}</div>
+      <div class="rh-dt">${fmtDate(now)} · ${now.toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</div>
+    </div>
+    <div class="report-section">
+      <div class="report-section-title">Sales Summary</div>
+      <div class="report-row highlight"><span class="rl">Net Revenue</span><span class="rv">$${total.toFixed(2)}</span></div>
+      <div class="report-row"><span class="rl">Transactions</span><span class="rv">${count}</span></div>
+      <div class="report-row"><span class="rl">Avg Order Value</span><span class="rv">$${avg.toFixed(2)}</span></div>
+    </div>
+    <div class="report-section">
+      <div class="report-section-title">Payment Methods</div>
+      <div class="report-row"><span class="rl">💵 Cash</span><span class="rv">$${pay.cash.toFixed(2)}</span></div>
+      <div class="report-row"><span class="rl">📱 PayNow</span><span class="rv">$${pay.paynow.toFixed(2)}</span></div>
+    </div>
+    <div class="report-section">
+      <div class="report-section-title">Top Services (Session)</div>
+      ${topItems.length?topItems.map(([n,q])=>`<div class="report-row"><span class="rl">${n}</span><span class="rv">${q}×</span></div>`).join(''):'<div class="report-row"><span class="rl" style="color:var(--text3)">No data</span></div>'}
+    </div>
+    ${type==='Z'?'<div style="text-align:center;font-size:12px;color:var(--red);margin-top:8px;padding:10px;border:1px solid var(--red);border-radius:6px">Z-Report generated — session totals reset</div>':''}`;
+}
+
+function openXReport(){
+  window._loadTodayTxns(fmtDate(new Date()),(err,txns)=>{
+    document.getElementById('report-content').innerHTML=buildReport(txns||[],'X');
+    document.getElementById('report-modal').classList.add('open');
+  });
+}
+function openZReport(){
+  openAdminModal('Z-Report','Admin PIN required to close day',()=>{
+    window._loadTodayTxns(fmtDate(new Date()),(err,txns)=>{
+      document.getElementById('report-content').innerHTML=buildReport(txns||[],'Z');
+      document.getElementById('report-modal').classList.add('open');
+      window._sessionTxns=[];
+      const now=new Date();
+      document.getElementById('terminal-closed').classList.add('open');
+      document.getElementById('tc-date').textContent=fmtDate(now)+' · '+now.toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit'});
+    });
+  });
+}
+function closeReport(){ document.getElementById('report-modal').classList.remove('open'); }
+
+function reopenTerminal(){
+  openAdminModal('Re-open Terminal','Admin PIN required',()=>{
+    document.getElementById('terminal-closed').classList.remove('open');
+    txnCounter=0; localStorage.setItem('dow_txn_counter','0');
+    showToast('✅','Terminal re-opened');
+  });
+}
+
+// ══════════════════════════════════════════════════
+//  MISC
+// ══════════════════════════════════════════════════
+function showToast(icon,msg){
+  document.getElementById('t-icon').textContent=icon;
+  document.getElementById('t-msg').textContent=msg;
+  const t=document.getElementById('toast');
+  t.classList.add('show');
+  clearTimeout(window._tt);
+  window._tt=setTimeout(()=>t.classList.remove('show'),3000);
+}
+
+setInterval(()=>{ document.getElementById('clock').textContent=new Date().toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); },1000);
+
+// Close order complete on backdrop click
+document.getElementById('order-complete').addEventListener('click',function(e){
+  if(e.target===this) this.classList.remove('open');
+});
+
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+
+// Init
+initSessionFromLocal();
+renderCatTabs();
+renderServices();
+renderCart();
+</script>
+</body>
+</html>
